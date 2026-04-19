@@ -3,7 +3,7 @@ import os
 
 load_dotenv()
 
-DB_PATH = os.getenv("DB_PATH", "data/project.db")
+DB_PATH = os.getenv("DB_PATH", "/app/data/project.db")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "ProsusAI/finbert")
 API_HOST = os.getenv("API_HOST", "http://127.0.0.1:8000")
