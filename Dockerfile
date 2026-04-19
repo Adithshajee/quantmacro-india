@@ -25,4 +25,4 @@ COPY .env.example .
 EXPOSE 8080
 
 # Run the dashboard (One-Click Setup)
-CMD ["streamlit", "run", "src/dashboard/app.py", "--server.port", "8080", "--server.address", "0.0.0.0"]
+CMD streamlit run src/dashboard/app.py --server.port $PORT --server.address 0.0.0.0
