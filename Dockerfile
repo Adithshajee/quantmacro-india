@@ -10,22 +10,25 @@ WORKDIR /app
 # STEP 1: Force-install CPU-only Torch immediately
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# Remove build tools no longer needed at runtime
-RUN apt-get remove -y build-essential && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-
 # STEP 2: Install remaining dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# STEP 3: Setup non-root user and copy code
+# STEP 3: Setup non-root user and persistent directories
 RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN mkdir -p data models && chown -R appuser:appuser /app
+# Create directories and ensure appuser owns them for SQLite/Model caching
+RUN mkdir -p /app/data /app/models && \
+    chown -R appuser:appuser /app/data /app/models && \
+    chmod -R 775 /app/data /app/models
+
 USER appuser
 
+# Copy source code
 COPY src/ ./src/
 COPY .env.example .
 
+# Expose the port Railway expects
 EXPOSE 8080
 
-# Run the dashboard (One-Click Setup)
-CMD streamlit run src/dashboard/app.py --server.port 8080 --server.address 0.0.0.0 --server.headless true --logger.level=info
+# The Final Entrypoint: Uses $PORT so Railway can find the app
+CMD streamlit run src/dashboard/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
