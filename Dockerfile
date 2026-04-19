@@ -10,6 +10,9 @@ WORKDIR /app
 # STEP 1: Force-install CPU-only Torch immediately
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
+# Remove build tools no longer needed at runtime
+RUN apt-get remove -y build-essential && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
 # STEP 2: Install remaining dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -25,4 +28,4 @@ COPY .env.example .
 EXPOSE 8080
 
 # Run the dashboard (One-Click Setup)
-CMD streamlit run src/dashboard/app.py --server.port $PORT --server.address 0.0.0.0
+CMD streamlit run src/dashboard/app.py --server.port 8080 --server.address 0.0.0.0 --server.headless true --logger.level=info
