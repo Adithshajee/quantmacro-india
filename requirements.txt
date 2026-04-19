@@ -6,7 +6,6 @@ pandas
 requests
 yfinance
 python-dotenv
-torch
 transformers
 scikit-learn
 joblib

@@ -1,24 +1,28 @@
 FROM python:3.10-slim
 
-# Create a non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Install minimal build tools
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy and install dependencies
+# STEP 1: Force-install CPU-only Torch immediately
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# STEP 2: Install remaining dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create necessary directories and set permissions
+# STEP 3: Setup non-root user and copy code
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN mkdir -p data models && chown -R appuser:appuser /app
-
-# Switch to non-root user
 USER appuser
 
-# Copy application code and example env
 COPY src/ ./src/
 COPY .env.example .
 
-EXPOSE 8000
+EXPOSE 8080
 
-CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the dashboard (One-Click Setup)
+CMD ["streamlit", "run", "src/dashboard/app.py", "--server.port", "8080", "--server.address", "0.0.0.0"]
