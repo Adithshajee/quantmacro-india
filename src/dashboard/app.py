@@ -1,228 +1,240 @@
 import streamlit as st
 import pandas as pd
-import sys
+import numpy as np
 import os
-import time
-import subprocess
-import requests
+import sys
+import altair as alt
+from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from src.database.queries import get_latest_prices, get_latest_news_for_sector, get_market_pulse, get_top_impact_articles
 from src.database.connection import get_streamlit_connection
-from src.utils.config import API_HOST, TARGET_SECTORS
+from src.ingestion.news_fetcher import run_ingestion
+from src.ingestion.fetch_bse_data import main as fetch_bse_main
+from src.utils.config import TARGET_SECTORS
+from src.insights.engine import generate_insights
+from src.insights.llm import explain_market_condition
+from src.models.predictor import PricePredictor
 
-import socket
-import atexit
+# --- Page Config ---
+st.set_page_config(page_title="BSE AI Analytics", layout="wide", page_icon="📈")
 
-st.set_page_config(page_title="BSE Sector & Macro News DB", layout="wide")
+# Custom CSS for modern layout
+st.markdown("""
+<style>
+    .reportview-container { background: #f0f2f6 }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .stAlert { border-radius: 8px; }
+    h1, h2, h3 { font-family: 'Inter', sans-serif; }
+    .intro-text { font-size: 1.1em; color: #444; }
+</style>
+""", unsafe_allow_html=True)
 
-# Environment Validation
-missing_deps = []
-for lib in ["yfinance", "transformers", "torch"]:
+st.title("🤖 BSE AI Decision Support System")
+
+st.markdown("""
+<div class="intro-text">
+<b>📌 What this system does:</b><br>
+This AI-powered financial platform analyzes the Indian equity market using quantitative and qualitative data. It provides:
+<ul>
+    <li><b>Market trend analysis:</b> Tracks indices with advanced volatility and moving average indicators.</li>
+    <li><b>News sentiment impact:</b> Aggregates and scores real-time news to gauge market emotion.</li>
+    <li><b>AI-driven predictions:</b> Uses Machine Learning (Random Forest) and LLMs to forecast next-day movements and explain market behavior.</li>
+</ul>
+</div>
+<hr>
+""", unsafe_allow_html=True)
+
+# --- Refresh Logic ---
+@st.cache_data(ttl=86400)
+def run_all_pipelines():
     try:
-        __import__(lib)
-    except ImportError:
-        missing_deps.append(lib)
+        fetch_bse_main()
+        run_ingestion()
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    except Exception as e:
+        st.error(f"Error during auto-refresh: {e}")
+        return "Failed"
 
-if missing_deps:
-    st.error(f"Missing required libraries: {', '.join(missing_deps)}. Please install them to continue.")
-    st.stop()
+last_updated = run_all_pipelines()
 
-# Auto-Launch API
-def is_port_in_use(port):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(('127.0.0.1', port)) == 0
+# --- Database helpers ---
+@st.cache_data(ttl=300) # Cache DB queries for 5 mins
+def load_data(query, params=()):
+    try:
+        conn = get_streamlit_connection()
+        return pd.read_sql(query, conn, params=params)
+    except Exception as e:
+        st.error(f"Database error: {e}")
+        return pd.DataFrame()
 
-if 'api_launched' not in st.session_state:
-    if not is_port_in_use(8000):
-        # Launch API
-        api_cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        api_process = subprocess.Popen(["uvicorn", "src.api.main:app", "--host", "127.0.0.1", "--port", "8000"], cwd=api_cwd)
-        st.session_state['api_launched'] = True
+# --- ML caching ---
+@st.cache_resource
+def get_trained_predictor(df):
+    predictor = PricePredictor()
+    success, test_results = predictor.train_and_evaluate(df)
+    return predictor, success, test_results
 
-        def cleanup_api():
-            api_process.terminate()
-            api_process.wait()
-        
-        atexit.register(cleanup_api)
-    else:
-        st.session_state['api_launched'] = True
-
-conn = get_streamlit_connection()
-
-st.title("📈 BSE Macro-Sector Analyzer")
-
-df_prices_init = get_latest_prices(conn)
-if not df_prices_init.empty:
-    latest_date_str = pd.to_datetime(df_prices_init['date']).max().strftime('%B %d, %Y')
-    st.caption(f"**Data as of: {latest_date_str}**")
-else:
-    st.caption("**Data as of: N/A (Run Sync)**")
-
-@st.cache_data(ttl=3600)
-def cached_get_latest_prices():
-    return get_latest_prices(conn)
-
-@st.cache_data(ttl=3600)
-def cached_get_latest_news_for_sector(sector, limit=20):
-    return get_latest_news_for_sector(sector, limit, conn)
-
-@st.cache_data(ttl=3600)
-def cached_get_market_pulse():
-    return get_market_pulse(conn)
-
-@st.cache_data(ttl=3600)
-def cached_get_top_impact_articles(limit=3):
-    return get_top_impact_articles(limit, conn)
-
-# Background orchestration
-def run_pipeline():
-    with st.status("Running One-Click Pipeline...", expanded=True) as status:
-        pipeline_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "utils", "master_orchestrator.py"))
-        process = subprocess.Popen(
-            ["python", pipeline_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        )
-        for line in iter(process.stdout.readline, ''):
-            line = line.strip()
-            if line:
-                if "PROGRESS:" in line:
-                    status.update(label=f"Calculating AI Sentiment: {line.split('PROGRESS:')[1].strip()}", expanded=True)
-                elif line.startswith("STEP:"):
-                    status.update(label=f"Running: {line.split('STEP:')[1].strip()}", expanded=True)
-                st.write(line)
-                
-        process.wait()
-        if process.returncode != 0:
-            status.update(label="Pipeline Failed", state="error", expanded=True)
-            return
-
-        status.update(label="Sync & Refresh Complete!", state="complete", expanded=False)
-
-    st.cache_data.clear()
-    time.sleep(0.5)
-    st.rerun()
-
-st.sidebar.header("Controls")
-if st.sidebar.button("🔄 Sync & Refresh"):
-    run_pipeline()
-
-API_BASE = API_HOST.rstrip('/')
-
-# Health Check logic
-api_healthy = False
-try:
-    health_resp = requests.get(f"{API_BASE}/health", timeout=2)
-    if health_resp.status_code == 200:
-        api_healthy = True
-except requests.exceptions.RequestException:
-    pass
-
-# Market Pulse
-pulse = cached_get_market_pulse()
-if pulse:
-    st.header("🌐 Market Pulse")
-    cols = st.columns(len(pulse))
-    for col, (sector, score) in zip(cols, pulse.items()):
-        formatted_score = f"{score:.2f}" if score is not None else "0.00"
-        delta = score if score is not None else 0
-        col.metric(label=sector, value=formatted_score, delta=f"{delta:.2f} Avg Sentiment")
-
-st.divider()
-
-# High-Impact Articles
-st.header("⚡ Top 3 High-Impact Articles")
-top_articles = cached_get_top_impact_articles(limit=3)
-if not top_articles.empty:
-    for idx, row in top_articles.iterrows():
-        sentiment_color = "🟢" if row["sentiment_score"] > 0 else "🔴"
-        st.markdown(f"### {sentiment_color} {row['headline']}")
-        st.markdown(f"**Sector:** {row['sector_index']} | **Score:** {row['sentiment_score']:.2f} ({row['sentiment']})")
-else:
-    st.write("No configured articles found yet. Run Sync to capture AI sentiment.")
-
-st.divider()
-
-df_prices = cached_get_latest_prices()
-
-st.sidebar.header("Filter by Sector")
-sectors = [s for s in df_prices["sector_index"].unique() if s in TARGET_SECTORS] if not df_prices.empty else []
-selected_sector = st.sidebar.selectbox("Select Sector", sectors)
-
-if not df_prices.empty and selected_sector:
-    sector_data = df_prices[df_prices["sector_index"] == selected_sector].copy()
-    
-    # Restrict scale to 6 months
-    sector_data["date"] = pd.to_datetime(sector_data["date"])
-    six_months_ago = pd.Timestamp.now() - pd.DateOffset(months=6)
-    sector_data = sector_data[sector_data["date"] >= six_months_ago]
-    
-    st.subheader(f"{selected_sector} Price Trend (Last 6 Months)")
-    
-    chart_data = sector_data.set_index("date")["close_price"]
-    st.line_chart(chart_data)
-
-    st.subheader(f"Recent Macro News for {selected_sector}")
-    df_news = cached_get_latest_news_for_sector(selected_sector)
-    
-    if not df_news.empty:
-        for idx, row in df_news.iterrows():
-            with st.expander(f"{row['published_at'][:10]} - {row['headline']}"):
-                color = "green" if row['sentiment'] == "positive" else "red" if row['sentiment'] == "negative" else "gray"
-                st.markdown(f"**Score:** :{color}[{row['sentiment']} ({row['sentiment_score']:.2f})]")
-                st.markdown(f"**Audit Trail:** {row['mapping_reason']}")
-    else:
-        st.write("No mapped news found for this sector.")
-        
-    st.subheader(f"🔮 Next-Day Outlook")
-    
-    if api_healthy:
+# --- Sidebar ---
+st.sidebar.header("⚙️ Control Panel")
+if st.sidebar.button("🔄 Force Refresh Data"):
+    with st.spinner("Fetching latest news & market data..."):
         try:
-            # Pre-compute lag and sentiment to send
-            lag1 = float(sector_data['daily_return_pct'].iloc[-2]) if len(sector_data) > 1 else 0.0
-            sentiment_val = pulse.get(selected_sector, 0.0) or 0.0
-            
-            resp = requests.post(f"{API_BASE}/predict", json={
-                "lag1_return": lag1,
-                "weighted_sentiment": sentiment_val,
-                "sector_index": selected_sector
-            }, timeout=5)
-            
-            if resp.status_code == 200:
-                pred = resp.json()
-                if pred["is_green"]:
-                    st.success(f"**Outlook:** GREEN (Expected to rise) with {pred['probability']*100:.1f}% confidence")
-                else:
-                    red_conf = (1 - pred['probability'])*100
-                    st.error(f"**Outlook:** RED (Expected to fall) with {red_conf:.1f}% confidence")
-                
-                st.subheader("🧠 Strategic Suggestions")
-                sentiment_label = "positive" if sentiment_val > 0 else "negative" if sentiment_val < 0 else "neutral"
-                if pred["is_green"] and pred["probability"] > 0.8:
-                    advice = f"Strong positive outlook with {pred['probability']*100:.1f}% confidence. High {sentiment_label} sentiment suggests capitalizing on momentum in {selected_sector}."
-                elif not pred["is_green"] and red_conf > 80:
-                    advice = f"High {sentiment_label} sentiment in {selected_sector} suggests a defensive stance; consider reallocating to robust sectors as confidence of a drop exceeds 80%."
-                elif pred["is_green"]:
-                    advice = f"Moderate positive outlook. Monitor {selected_sector} closely while leveraging steady {sentiment_label} sentiment."
-                else:
-                    advice = f"Caution advised. Expected to drop with moderate confidence amidst {sentiment_label} sentiment."
-                    
-                st.info(f"**AI Advisor:** {advice}")
-                
-                if not pred["is_green"] and red_conf >= 99:
-                    st.warning(f"**Pro Tip:** 🔴 Overwhelming 99%+ RED confidence detected. Strongly consider deeply defensive market moves, hedging {selected_sector} exposures, or maintaining heavy cash positions.")
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            run_all_pipelines()
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Failed to refresh: {e}")
 
-            else:
-                st.warning("Prediction API returned error.")
-        except requests.exceptions.ConnectionError:
-            st.error("Prediction API is unreachable.")
-            st.info("💡 **Troubleshooting Guide:** To enable Next-Day Outlook predicting, please launch the FastAPI service in a separate terminal: `uvicorn src.api.main:app --host 127.0.0.1 --port 8000`")
-    else:
-        st.error("Prediction API Unreachable.")
-        st.info("💡 **Troubleshooting Guide:** To enable Next-Day Outlook predicting, please launch the FastAPI service in a separate terminal: `uvicorn src.api.main:app --host 127.0.0.1 --port 8000`")
+st.sidebar.caption(f"Last Updated: {last_updated}")
+st.sidebar.divider()
+
+# --- Sector Mapping ---
+sector_map = {
+    "Banking": {"price": "BANKING_SECTOR", "news": "BSE_BANKEX"},
+    "IT": {"price": "IT_SECTOR", "news": "BSE_IT"},
+    "Energy": {"price": "ENERGY_SECTOR", "news": "BSE_ENERGY"},
+    "Market (Sensex)": {"price": "BSE_SENSEX", "news": "BSE_SENSEX"},
+}
+
+sel = st.sidebar.selectbox("🎯 Select Market Sector", list(sector_map.keys()))
+p_key = sector_map[sel]["price"]
+n_key = sector_map[sel]["news"]
+
+# Fetch Data
+pdf = load_data(
+    "SELECT date, close_price, daily_return_pct FROM bse_sector_prices WHERE sector_index = ? ORDER BY date",
+    (p_key,),
+)
+
+ndf = load_data(
+    """
+    SELECT r.published_at, r.headline, r.sentiment, r.sentiment_score 
+    FROM raw_news r 
+    JOIN news_sector_mapping m ON r.id = m.news_id 
+    WHERE m.sector_index = ? 
+    ORDER BY r.published_at DESC
+    LIMIT 100
+    """,
+    (n_key,),
+)
+
+# --- TABS ---
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Market Trends", "📰 Sentiment Analysis", "🤖 AI Insights", "🔮 Predictions"])
+
+# Ensure data exists
+if not pdf.empty:
+    pdf["date"] = pd.to_datetime(pdf["date"])
+    pdf = pdf.sort_values('date')
+    
+    # Calculate Advanced Indicators
+    pdf['MA50'] = pdf['close_price'].rolling(window=50).mean()
+    pdf['MA200'] = pdf['close_price'].rolling(window=200).mean()
+    pdf['Volatility_20d'] = pdf['daily_return_pct'].rolling(window=20).std() * np.sqrt(252)
+    
+    latest_price = pdf.iloc[-1]["close_price"]
+    prev_price = pdf.iloc[-2]["close_price"] if len(pdf) > 1 else latest_price
+    delta_pct = ((latest_price - prev_price) / prev_price) * 100
+    current_vol = pdf.iloc[-1]['Volatility_20d']
 else:
-    st.write("No price data available. Please run data ingestion pipelines via Sync.")
+    latest_price = 0
+    delta_pct = 0
+    current_vol = 0
+
+with tab1:
+    st.header(f"📈 {sel} Market Overview")
+    if not pdf.empty:
+        c1, c2 = st.columns(2)
+        c1.metric(f"{sel} Index", f"₹{latest_price:,.2f}", f"{delta_pct:.2f}%")
+        c2.metric("20-Day Volatility", f"{current_vol:.2f}%" if pd.notnull(current_vol) else "N/A", "Annualized")
+        
+        st.subheader("Price Action & Moving Averages")
+        chart_data = pdf.set_index("date")[['close_price', 'MA50', 'MA200']]
+        st.line_chart(chart_data, use_container_width=True)
+    else:
+        st.warning("No price data available.")
+
+with tab2:
+    st.header(f"📰 {sel} AI Sentiment Feed")
+    if not ndf.empty:
+        avg_sent = ndf.head(10)['sentiment_score'].mean()
+        sent_delta = avg_sent - (ndf.tail(10)['sentiment_score'].mean() if len(ndf)>10 else 0)
+        
+        st.metric("Avg Sentiment Score (7d)", f"{avg_sent:.2f}", f"{sent_delta:.2f} shift")
+        st.divider()
+        
+        for index, row in ndf.head(10).iterrows():
+            sentiment = str(row["sentiment"]).lower()
+            label = "🟢 Pos" if sentiment == "positive" else "🔴 Neg" if sentiment == "negative" else "⚪ Neu"
+            st.markdown(f"**{label}** | {row['headline']} _({str(row['published_at'])[:10]})_")
+    else:
+        st.info("No news found for this sector. Try refreshing the data.")
+
+with tab3:
+    st.header("🧠 AI Synthesized Insights")
+    if not pdf.empty and not ndf.empty:
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            st.subheader("🤖 LLM Market Summary")
+            with st.spinner("Generating deep explanation..."):
+                headlines = ndf['headline'].tolist()
+                insights = generate_insights(pdf, ndf)
+                explanation = explain_market_condition(sel, insights, headlines)
+                st.info(explanation)
+                
+                st.markdown("**Why this matters:**")
+                st.caption("LLM summaries synthesize hundreds of data points into actionable intelligence, saving analysts hours of reading while rapidly surfacing hidden market drivers.")
+        
+        with c2:
+            st.subheader("⚠️ Divergence Analysis")
+            for ins in insights:
+                st.markdown(ins)
+    else:
+        st.warning("Insufficient data to generate AI insights.")
+
+with tab4:
+    st.header("🔮 Next-Day Forecasting")
+    if not pdf.empty:
+        with st.spinner("Training Machine Learning Models..."):
+            predictor, success, test_results = get_trained_predictor(pdf)
+            
+        if success and predictor.trained:
+            pred_trend, pred_price, confidence = predictor.predict_next_day(pdf)
+            
+            c1, c2, c3 = st.columns(3)
+            trend_label = "UP ⬆️" if pred_trend == 1 else "DOWN ⬇️"
+            
+            c1.metric("Predicted Next Day Trend", trend_label)
+            c2.metric("Predicted Next Day Price", f"₹{pred_price:,.2f}")
+            c3.metric("Model Confidence", f"{confidence:.1f}%")
+            
+            st.divider()
+            
+            # Layout for Charts
+            ch1, ch2 = st.columns([2, 1])
+            
+            with ch1:
+                st.subheader("🧪 Backtesting: AI Strategy vs Buy & Hold")
+                if test_results is not None and not test_results.empty:
+                    plot_df = test_results[['bnh_cumulative', 'strategy_cumulative']].copy()
+                    plot_df.columns = ["Buy & Hold", "AI Strategy"]
+                    st.line_chart(plot_df, use_container_width=True)
+            
+            with ch2:
+                st.subheader("🧠 Feature Importance")
+                feat_imp = predictor.trend_model.feature_importances_
+                features = ['daily_return_pct', 'lag1_return', 'lag2_return', 'rolling_mean_return_5', 'volatility_5']
+                imp_df = pd.DataFrame({"Feature": features, "Importance": feat_imp})
+                
+                chart = alt.Chart(imp_df).mark_bar().encode(
+                    x=alt.X("Importance:Q", title="Importance Score"),
+                    y=alt.Y("Feature:N", sort="-x", title="Feature"),
+                    color=alt.Color("Importance:Q", scale=alt.Scale(scheme="blues"), legend=None)
+                ).properties(height=300)
+                
+                st.altair_chart(chart, use_container_width=True)
+                
+        else:
+            st.warning("Not enough historical data to train the model robustly (Need at least 20 days).")
+    else:
+        st.warning("No price data.")
