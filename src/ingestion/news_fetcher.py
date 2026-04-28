@@ -3,11 +3,12 @@ import sqlite3
 import os
 import sys
 import time
+import logging
 from datetime import datetime
 import xml.etree.ElementTree as ET
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from src.utils.config import DB_PATH, NEWS_API_KEY, TARGET_SECTORS
+from src.utils.config import NEWS_API_KEY
 from src.database.connection import get_connection
 from src.utils.sentiment import SentimentAnalyzer
 
@@ -15,7 +16,6 @@ try:
     from src.utils.logger import get_logger
     logger = get_logger("news_fetcher")
 except ImportError:
-    import logging
     logger = logging.getLogger("news_fetcher")
     logger.setLevel(logging.INFO)
 
@@ -76,14 +76,13 @@ def fetch_from_google_news_rss():
             response = requests.get(GOOGLE_NEWS_RSS_URL, params=params, timeout=10)
             if response.status_code == 200:
                 root = ET.fromstring(response.content)
-                for item in root.findall('./channel/item')[:15]:  # Get top 15 per category
+                for item in root.findall('./channel/item')[:15]:
                     title = item.find('title').text if item.find('title') is not None else ""
                     link = item.find('link').text if item.find('link') is not None else ""
                     pubDate = item.find('pubDate').text if item.find('pubDate') is not None else ""
                     source = item.find('source').text if item.find('source') is not None else "Google News"
                     
                     try:
-                        # Convert RFC822 to ISO 8601
                         dt = datetime.strptime(pubDate, "%a, %d %b %Y %H:%M:%S %Z")
                         iso_date = dt.isoformat()
                     except:
@@ -94,9 +93,9 @@ def fetch_from_google_news_rss():
                         "url": link,
                         "publishedAt": iso_date,
                         "source": {"name": source},
-                        "content": title  # RSS often doesn't have full content
+                        "content": title 
                     })
-            time.sleep(1) # Be nice
+            time.sleep(1) # Rate limit respect
         except Exception as e:
             logger.error(f"Google News RSS Fetch error for {query}: {e}")
             
@@ -135,7 +134,6 @@ def save_news(articles, analyzer: SentimentAnalyzer):
             failed += 1
             continue
 
-        # Sentiment Analysis
         text_to_analyze = f"{clean['headline']} {clean['content']}"
         sentiment_label, sentiment_score = analyzer.analyze(text_to_analyze)
 
@@ -160,7 +158,6 @@ def save_news(articles, analyzer: SentimentAnalyzer):
             
             news_id = cursor.lastrowid
             
-            # Simple Sector Mapping
             headline_lower = clean["headline"].lower()
             if "bank" in headline_lower or "finance" in headline_lower or "rbi" in headline_lower:
                 sector = "BSE_BANKEX"
@@ -169,7 +166,7 @@ def save_news(articles, analyzer: SentimentAnalyzer):
             elif "energy" in headline_lower or "oil" in headline_lower or "power" in headline_lower:
                 sector = "BSE_ENERGY"
             else:
-                sector = "BSE_SENSEX" # Default to general market
+                sector = "BSE_SENSEX" 
 
             cursor.execute(
                 """
@@ -181,7 +178,6 @@ def save_news(articles, analyzer: SentimentAnalyzer):
             )
             inserted += 1
         except sqlite3.IntegrityError:
-            # URL already exists
             skipped += 1
         except Exception as e:
             logger.error(f"Insert error: {e}")
@@ -204,9 +200,8 @@ def run_ingestion():
     to_date = datetime.now().strftime("%Y-%m-%d")
     from_date = get_last_fetched_date() or "2024-01-01"
 
-    # Try NewsAPI first
     if NEWS_API_KEY:
-        max_pages = 2  # Keep it small to save API credits and run fast
+        max_pages = 2 
         for page in range(1, max_pages + 1):
             logger.info(f"Fetching page {page}/{max_pages} from NewsAPI...")
             articles = fetch_from_news_api(page, from_date)
@@ -220,7 +215,6 @@ def run_ingestion():
             total_failed += failed
             time.sleep(1)
             
-    # Fallback / Supplement with Google News RSS
     logger.info("Fetching from Google News RSS...")
     rss_articles = fetch_from_google_news_rss()
     if rss_articles:

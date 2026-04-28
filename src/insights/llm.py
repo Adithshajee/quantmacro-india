@@ -1,10 +1,13 @@
 import requests
 import logging
 from typing import List
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from src.utils.config import API_KEYS
 
 logger = logging.getLogger(__name__)
-
 
 # ----------------------------------------
 # MAIN FUNCTION
@@ -15,7 +18,6 @@ def explain_market_condition(
     """
     Generate AI explanation using available LLMs with safe fallback.
     """
-
     prompt = build_prompt(sector, insights_list, recent_news_headlines)
 
     # Try LLMs in priority order
@@ -34,7 +36,7 @@ def explain_market_condition(
 
 
 # ----------------------------------------
-# PROMPT BUILDER (CLEAN SEPARATION)
+# PROMPT BUILDER
 # ----------------------------------------
 def build_prompt(sector, insights, news):
     return (
@@ -46,9 +48,8 @@ def build_prompt(sector, insights, news):
         f"1. Summarize market condition\n"
         f"2. Identify trend (bullish/bearish/neutral)\n"
         f"3. Give a short recommendation (BUY/HOLD/SELL)\n\n"
-        f"Keep it concise (3–4 sentences)."
+        f"Keep it concise (3-4 sentences)."
     )
-
 
 # ----------------------------------------
 # LLM ROUTER
@@ -61,13 +62,11 @@ def call_llm(provider, prompt):
     elif provider == "openai":
         return call_openai(prompt)
 
-
 # ----------------------------------------
 # GROQ
 # ----------------------------------------
 def call_groq(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
-
     response = requests.post(
         url,
         headers={
@@ -81,40 +80,33 @@ def call_groq(prompt):
         },
         timeout=10,
     )
-
     return safe_extract(response)
-
 
 # ----------------------------------------
 # GEMINI
 # ----------------------------------------
 def call_gemini(prompt):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={API_KEYS['gemini']}"
-
     response = requests.post(
         url,
         headers={"Content-Type": "application/json"},
         json={"contents": [{"parts": [{"text": prompt}]}]},
         timeout=10,
     )
-
     try:
         if response.status_code == 200:
-            return response.json()["candidates"][0]["content"]["parts"][0][
-                "text"
-            ].strip()
+            return response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        else:
+            logger.warning(f"Gemini API Error: {response.status_code}")
     except Exception as e:
         logger.warning(f"Gemini parsing failed: {e}")
-
     return None
-
 
 # ----------------------------------------
 # OPENAI
 # ----------------------------------------
 def call_openai(prompt):
     url = "https://api.openai.com/v1/chat/completions"
-
     response = requests.post(
         url,
         headers={
@@ -128,9 +120,7 @@ def call_openai(prompt):
         },
         timeout=10,
     )
-
     return safe_extract(response)
-
 
 # ----------------------------------------
 # SAFE RESPONSE PARSER
@@ -140,14 +130,13 @@ def safe_extract(response):
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"].strip()
         else:
-            logger.warning(f"LLM API error: {response.status_code}")
+            logger.warning(f"LLM API error: {response.status_code} - {response.text}")
     except Exception as e:
         logger.warning(f"Response parsing failed: {e}")
     return None
 
-
 # ----------------------------------------
-# FALLBACK (SMARTER VERSION)
+# FALLBACK
 # ----------------------------------------
 def rule_based_fallback(sector, insights):
     sentiment_signal = any("bullish" in i.lower() for i in insights)
@@ -165,7 +154,7 @@ def rule_based_fallback(sector, insights):
 
     return (
         f"The {sector} sector currently shows {tone} based on internal indicators. "
-        f"{' '.join(insights[:2])}. "
+        f"{' '.join(insights[:2]) if insights else ''} "
         f"Overall recommendation: {recommendation}. "
         f"(Rule-based fallback – add API key for advanced AI analysis)"
     )

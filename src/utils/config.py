@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 IS_CLOUD = os.getenv("STREAMLIT") == "true" or not os.name == "nt"
-
 DB_PATH = "/tmp/project.db" if IS_CLOUD else os.getenv("DB_PATH", "data/project.db")
 
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
