@@ -19,18 +19,51 @@ st.set_page_config(page_title="BSE AI Analytics", layout="wide", page_icon="📈
 
 st.markdown("""
 <style>
-    .reportview-container { background: #f0f2f6 }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .stAlert { border-radius: 8px; }
-    h1, h2, h3 { font-family: 'Inter', sans-serif; }
-    .intro-text { font-size: 1.1em; color: #444; }
+    /* Force dark theme overrides */
+    .stApp {
+        background-color: #0e1117;
+    }
+    
+    /* Modern Dark Cards for Metrics */
+    div[data-testid="stMetric"] {
+        background-color: #1c1f26;
+        padding: 15px 20px;
+        border-radius: 10px;
+        border: 1px solid #2d3139;
+        box-shadow: none;
+    }
+    
+    div[data-testid="stMetricLabel"] p {
+        color: #a0a6b5 !important;
+        font-weight: 500;
+    }
+    
+    div[data-testid="stMetricValue"] > div {
+        color: #ffffff !important;
+    }
+    
+    .stAlert {
+        background-color: #1c1f26 !important;
+        border: 1px solid #2d3139 !important;
+        color: #e0e6ed !important;
+        border-radius: 10px;
+    }
+    
+    h1, h2, h3 { 
+        font-family: 'Inter', sans-serif; 
+        color: #ffffff;
+    }
+    
+    hr {
+        border-color: #2d3139;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🤖 BSE AI Decision Support System")
 
 st.markdown("""
-<div class="intro-text">
+<div style="font-size: 1.1em; color: #a0a6b5; margin-bottom: 20px;">
 <b>📌 What this system does:</b><br>
 This AI-powered financial platform analyzes the Indian equity market using quantitative and qualitative data. It provides:
 <ul>
@@ -42,12 +75,12 @@ This AI-powered financial platform analyzes the Indian equity market using quant
 <hr>
 """, unsafe_allow_html=True)
 
-# --- Refresh Logic ---
+# --- Unified Data Pipeline ---
 @st.cache_data(ttl=86400)
 def run_all_pipelines():
     try:
-        fetch_bse_main()
-        run_ingestion()
+        fetch_bse_main() 
+        run_ingestion()  
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
         st.error(f"Error during auto-refresh: {e}")
@@ -55,17 +88,16 @@ def run_all_pipelines():
 
 last_updated = run_all_pipelines()
 
-# --- Database helpers ---
+# --- Cached DB Loading ---
 @st.cache_data(ttl=300)
 def load_data(query, params=()):
     try:
         conn = get_streamlit_connection()
         return pd.read_sql(query, conn, params=params)
     except Exception as e:
-        st.error(f"DB Error: {e}")
         return pd.DataFrame()
 
-# --- ML caching ---
+# --- Cached ML Model ---
 @st.cache_resource
 def get_trained_predictor(df):
     predictor = PricePredictor()
@@ -84,7 +116,7 @@ if st.sidebar.button("🔄 Force Refresh Data"):
 st.sidebar.caption(f"Last Updated: {last_updated}")
 st.sidebar.divider()
 
-# --- Sector Mapping ---
+# --- Data Loading ---
 sector_map = {
     "Banking": {"price": "BANKING_SECTOR", "news": "BSE_BANKEX"},
     "IT": {"price": "IT_SECTOR", "news": "BSE_IT"},
@@ -96,7 +128,6 @@ sel = st.sidebar.selectbox("🎯 Select Market Sector", list(sector_map.keys()))
 p_key = sector_map[sel]["price"]
 n_key = sector_map[sel]["news"]
 
-# Fetch Data
 pdf = load_data("SELECT date, close_price, daily_return_pct FROM bse_sector_prices WHERE sector_index = ? ORDER BY date", (p_key,))
 ndf = load_data("SELECT r.published_at, r.headline, r.sentiment, r.sentiment_score FROM raw_news r JOIN news_sector_mapping m ON r.id = m.news_id WHERE m.sector_index = ? ORDER BY r.published_at DESC LIMIT 100", (n_key,))
 
@@ -148,8 +179,6 @@ with tab3:
                 insights = generate_insights(pdf, ndf)
                 explanation = explain_market_condition(sel, insights, ndf['headline'].tolist())
                 st.info(explanation)
-                st.markdown("**Why this matters:**")
-                st.caption("LLM summaries synthesize hundreds of data points into actionable intelligence, saving analysts hours of reading while rapidly surfacing hidden market drivers.")
         with c2:
             st.subheader("⚠️ Divergence Analysis")
             for ins in insights: st.markdown(ins)
@@ -180,11 +209,14 @@ with tab4:
                 feat_imp = predictor.trend_model.feature_importances_
                 features = ['daily_return_pct', 'lag1_return', 'lag2_return', 'rolling_mean_return_5', 'volatility_5']
                 imp_df = pd.DataFrame({"Feature": features, "Importance": feat_imp})
+                
+                # Dark theme Altair chart
                 chart = alt.Chart(imp_df).mark_bar().encode(
-                    x=alt.X("Importance:Q", title="Importance Score"),
-                    y=alt.Y("Feature:N", sort="-x", title="Feature"),
+                    x=alt.X("Importance:Q", title="Importance Score", axis=alt.Axis(gridColor="#2d3139", titleColor="#a0a6b5", labelColor="#a0a6b5")),
+                    y=alt.Y("Feature:N", sort="-x", title="Feature", axis=alt.Axis(titleColor="#a0a6b5", labelColor="#a0a6b5")),
                     color=alt.Color("Importance:Q", scale=alt.Scale(scheme="blues"), legend=None)
-                ).properties(height=300)
+                ).properties(height=300, background="#0e1117").configure_view(strokeOpacity=0)
+                
                 st.altair_chart(chart, use_container_width=True)
         else:
             st.warning("Not enough historical data to train the model robustly (Need at least 20 days).")

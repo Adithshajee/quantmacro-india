@@ -139,22 +139,4 @@ def safe_extract(response):
 # FALLBACK
 # ----------------------------------------
 def rule_based_fallback(sector, insights):
-    sentiment_signal = any("bullish" in i.lower() for i in insights)
-    risk_signal = any("risk" in i.lower() or "bearish" in i.lower() for i in insights)
-
-    if sentiment_signal and not risk_signal:
-        recommendation = "BUY"
-        tone = "positive momentum"
-    elif risk_signal:
-        recommendation = "SELL"
-        tone = "increasing downside risk"
-    else:
-        recommendation = "HOLD"
-        tone = "mixed signals"
-
-    return (
-        f"The {sector} sector currently shows {tone} based on internal indicators. "
-        f"{' '.join(insights[:2]) if insights else ''} "
-        f"Overall recommendation: {recommendation}. "
-        f"(Rule-based fallback – add API key for advanced AI analysis)"
-    )
+    return "AI insights currently unavailable"
