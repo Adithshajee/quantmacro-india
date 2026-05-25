@@ -123,19 +123,19 @@ All engineered signals are **shifted by 1 day (`lag1`)** before model target ali
 
 ## Running the Platform
 
-### Option A: Standalone Local Mode (Automatic Fallback)
-You can launch the dashboard directly. It will detect that the backend API is offline and compute all ML and backtesting metrics locally on-the-fly:
+### Unified Local Mode (Recommended)
+You can launch the entire platform (both the FastAPI backend and Streamlit dashboard) with a **single command**. The Streamlit frontend automatically checks the health of the FastAPI server and spawns it programmatically in the background if it is offline:
 ```bash
 streamlit run src/dashboard/app.py
 ```
+* Once launched, the dashboard will be available at [http://localhost:8501](http://localhost:8501) and the FastAPI server at [http://127.0.0.1:8000](http://127.0.0.1:8000) (Swagger documentation is available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)).
 
-### Option B: Decoupled REST Mode (Recommended)
+### Manual Decoupled Mode (Optional)
+If you prefer to run the services in separate processes manually:
 1. **Start the FastAPI Backend**:
    ```bash
    uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
    ```
-   *The Swagger API documentation will be available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).*
-
 2. **Start the Streamlit Frontend**:
    In a separate terminal, run:
    ```bash
