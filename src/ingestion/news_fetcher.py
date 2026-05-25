@@ -11,6 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 from src.utils.config import NEWS_API_KEY
 from src.database.connection import get_connection
 from src.utils.sentiment import SentimentAnalyzer
+from src.nlp.news_mapper import SemanticNewsMapper
 
 try:
     from src.utils.logger import get_logger
@@ -120,7 +121,7 @@ def normalize_article(article):
     except Exception:
         return None
 
-def save_news(articles, analyzer: SentimentAnalyzer):
+def save_news(articles, analyzer: SentimentAnalyzer, mapper: SemanticNewsMapper):
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -158,15 +159,8 @@ def save_news(articles, analyzer: SentimentAnalyzer):
             
             news_id = cursor.lastrowid
             
-            headline_lower = clean["headline"].lower()
-            if "bank" in headline_lower or "finance" in headline_lower or "rbi" in headline_lower:
-                sector = "BSE_BANKEX"
-            elif "tech" in headline_lower or "it " in headline_lower or "software" in headline_lower:
-                sector = "BSE_IT"
-            elif "energy" in headline_lower or "oil" in headline_lower or "power" in headline_lower:
-                sector = "BSE_ENERGY"
-            else:
-                sector = "BSE_SENSEX" 
+            # Map headline to sector semantically (with fallback to keywords)
+            sector, reason = mapper.map_headline_to_sector(clean["headline"])
 
             cursor.execute(
                 """
@@ -174,7 +168,7 @@ def save_news(articles, analyzer: SentimentAnalyzer):
                 (news_id, sector_index, mapping_reason)
                 VALUES (?, ?, ?)
                 """,
-                (news_id, sector, "Keyword match in headline")
+                (news_id, sector, reason)
             )
             inserted += 1
         except sqlite3.IntegrityError:
@@ -191,7 +185,9 @@ def run_ingestion():
     start_time = datetime.now()
     logger.info(f"Starting news ingestion at {start_time}")
     
-    analyzer = SentimentAnalyzer()
+    # Enable FinBERT and Semantic News Mapper
+    analyzer = SentimentAnalyzer(use_finbert=True)
+    mapper = SemanticNewsMapper(use_embeddings=True)
 
     total_inserted = 0
     total_skipped = 0
@@ -209,7 +205,7 @@ def run_ingestion():
             if not articles:
                 break
 
-            inserted, skipped, failed = save_news(articles, analyzer)
+            inserted, skipped, failed = save_news(articles, analyzer, mapper)
             total_inserted += inserted
             total_skipped += skipped
             total_failed += failed
@@ -218,7 +214,7 @@ def run_ingestion():
     logger.info("Fetching from Google News RSS...")
     rss_articles = fetch_from_google_news_rss()
     if rss_articles:
-        inserted, skipped, failed = save_news(rss_articles, analyzer)
+        inserted, skipped, failed = save_news(rss_articles, analyzer, mapper)
         total_inserted += inserted
         total_skipped += skipped
         total_failed += failed

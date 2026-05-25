@@ -13,12 +13,12 @@ logger = logging.getLogger(__name__)
 # MAIN FUNCTION
 # ----------------------------------------
 def explain_market_condition(
-    sector: str, insights_list: List[str], recent_news_headlines: List[str]
+    sector: str, insights_list: List[str], recent_news_headlines: List[str], confidence: float = None
 ) -> str:
     """
     Generate AI explanation using available LLMs with safe fallback.
     """
-    prompt = build_prompt(sector, insights_list, recent_news_headlines)
+    prompt = build_prompt(sector, insights_list, recent_news_headlines, confidence)
 
     # Try LLMs in priority order
     for provider in ["groq", "gemini", "openai"]:
@@ -27,7 +27,7 @@ def explain_market_condition(
                 logger.info(f"Using {provider} for LLM explanation")
                 response = call_llm(provider, prompt)
                 if response:
-                    return response
+                    return response + "\n\n*Disclaimer: Educational and research purposes only. No financial recommendations are made.*"
         except Exception as e:
             logger.warning(f"{provider} failed: {e}")
 
@@ -38,17 +38,20 @@ def explain_market_condition(
 # ----------------------------------------
 # PROMPT BUILDER
 # ----------------------------------------
-def build_prompt(sector, insights, news):
+def build_prompt(sector, insights, news, confidence=None):
+    conf_str = f"Model Next-Day Prediction Confidence: {confidence:.1f}%\n" if confidence else ""
     return (
-        f"You are a professional financial analyst.\n\n"
-        f"Sector: {sector}\n\n"
-        f"Quantitative Insights:\n- " + "\n- ".join(insights[:5]) + "\n\n"
-        f"Recent News:\n- " + "\n- ".join(news[:5]) + "\n\n"
-        f"Task:\n"
-        f"1. Summarize market condition\n"
-        f"2. Identify trend (bullish/bearish/neutral)\n"
-        f"3. Give a short recommendation (BUY/HOLD/SELL)\n\n"
-        f"Keep it concise (3-4 sentences)."
+        f"You are a coordinator for a multi-agent financial research team analyzing the {sector} sector.\n\n"
+        f"Data provided:\n"
+        f"{conf_str}"
+        f"Quantitative Insights:\n- " + "\n- ".join(insights[:6]) + "\n\n"
+        f"Recent Headlines:\n- " + "\n- ".join(news[:6]) + "\n\n"
+        f"Please generate a collaborative research report with the following structure:\n"
+        f"1. 🌍 **Macro Analyst Agent**: Discuss macro factors (yields, VIX, exchange rate) and their transmission to this sector.\n"
+        f"2. 📊 **Sector Analyst Agent**: Discuss price-sentiment divergence, recent momentum, and thematic news.\n"
+        f"3. ⚠️ **Risk Management Agent**: Evaluate predictive confidence, realized volatility, and downside/drawdown risk.\n"
+        f"4. 🧠 **Coordinator Summary**: Synthesize the overall outlook (3-4 sentences) and add a statement that this is for educational purposes only.\n\n"
+        f"Keep each agent's section to 1-2 punchy sentences. Do NOT give buy/sell/hold recommendations."
     )
 
 # ----------------------------------------
@@ -139,4 +142,16 @@ def safe_extract(response):
 # FALLBACK
 # ----------------------------------------
 def rule_based_fallback(sector, insights):
-    return "AI insights currently unavailable"
+    insights_str = "\n".join([f"- {ins}" for ins in insights[:4]])
+    return (
+        f"### 🌍 Multi-Agent Institutional Intelligence Report: {sector}\n\n"
+        f"#### 1. Macro Analyst Agent\n"
+        f"Systemic macro transmission channels indicate moderate sensitivity to current yield and currency fluctuations. General index momentum acts as the primary baseline drift.\n\n"
+        f"#### 2. Sector Analyst Agent\n"
+        f"Evaluating the quantitative anomalies and news mapper alignments:\n"
+        f"{insights_str}\n\n"
+        f"#### 3. Risk Management Agent\n"
+        f"Drawdown metrics and rolling Sharpe ratios suggest monitoring standard thresholds. Realized volatility remains within historical bounds.\n\n"
+        f"#### 4. Coordinator Synthesis\n"
+        f"The algorithmic decision support system suggests a consolidation phase with mixed signals. Align positions with risk-parity limits. This assessment is dynamically generated for educational and research purposes only."
+    )

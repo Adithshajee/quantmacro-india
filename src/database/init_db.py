@@ -19,13 +19,24 @@ def initialize_database(conn=None):
     try:
         cursor = conn.cursor()
         
-        # Prices table
+        # Check if table exists and has old schema (missing open_price)
+        cursor.execute("PRAGMA table_info(bse_sector_prices)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if columns and "open_price" not in columns:
+            logger.info("Outdated bse_sector_prices table detected. Dropping and recreating for OHLCV support.")
+            cursor.execute("DROP TABLE IF EXISTS bse_sector_prices")
+
+        # Prices table (expanded for OHLCV support)
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS bse_sector_prices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT,
             sector_index TEXT,
+            open_price REAL,
+            high_price REAL,
+            low_price REAL,
             close_price REAL,
+            volume REAL,
             daily_return_pct REAL,
             UNIQUE(date, sector_index)
         )
