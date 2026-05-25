@@ -7,6 +7,32 @@ import requests
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+import subprocess
+import time
+
+# --- Auto-Start FastAPI Backend Server ---
+def auto_start_backend():
+    try:
+        # Check if backend is already online
+        res = requests.get("http://127.0.0.1:8000/health", timeout=0.5)
+        if res.status_code == 200:
+            return
+    except Exception:
+        pass
+
+    try:
+        # Launch Uvicorn asynchronously in the background using the current virtualenv Python interpreter
+        subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "src.api.main:app", "--host", "127.0.0.1", "--port", "8000"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        # Allow the API port to bind
+        time.sleep(1.5)
+    except Exception:
+        pass
+
+auto_start_backend()
 
 # Configure page
 st.set_page_config(
