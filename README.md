@@ -1,27 +1,76 @@
 # QuantMacro India — AI-Powered Sector Intelligence & Macro Analytics Engine
 
-A technically rigorous, portfolio-grade Indian market intelligence and quantitative research platform. The system ingests financial news and sectoral index data, scores sentiment semantically using FinBERT, aligns macro indicators (VIX, USDINR, crude oil, yields), and leverages calibrated Voting Ensembles (RandomForest + ExtraTrees + XGBoost/LightGBM) to forecast next-day trend directions. It includes a walk-forward, friction-aware backtesting engine to evaluate advanced allocation strategies (Kelly Criterion, Volatility Targeting) against standard benchmarks.
+QuantMacro India is an institutional-grade, research-ready, and microservice-friendly market intelligence and quantitative research platform. The system ingests financial news and sectoral index data, scores sentiment semantically using FinBERT, aligns macro indicators (VIX, USDINR, crude oil, yields, CPI, repo rates), and leverages calibrated Voting Ensembles (RandomForest + ExtraTrees + XGBoost/LightGBM) to forecast next-day trend directions. It includes a walk-forward, friction-aware backtesting engine to evaluate advanced allocation strategies (Kelly Criterion, Volatility Targeting) against standard benchmarks.
+
+```text
+                                  [DATA SOURCES]
+                        (yfinance, NewsAPI, RSS Search)
+                                       │
+                                       ▼
+                             [INGESTION WORKERS]
+                  (fetch_bse_data.py, news_fetcher.py)
+                                       │
+                                       ▼
+                             [SQLITE DATABASE]
+                         (bse_sector_prices, raw_news)
+                                       │
+                ┌──────────────────────┴──────────────────────┐
+                ▼                                             ▼
+       [NLP & SEMANTIC LAYER]                     [QUANT & FEATURES LAYER]
+      (news_mapper.py, sentiment.py)               (predictor.py indicators)
+                │                                             │
+                └──────────────────────┬──────────────────────┘
+                                       ▼
+                            [MACHINE LEARNING ENGINE]
+                       (Calibrated Voting Ensemble in predictor.py)
+                                       │
+                                       ▼
+                           [QUANTITATIVE BACKTESTER]
+                         (Sizing & metrics in engine.py)
+                                       │
+                                       ▼
+                             [FASTAPI BACKEND REST]
+                                  (main.py)
+                                       │
+                                       ▼
+                          [STREAMLIT TERM PANEL UI]
+                                  (app.py)
+```
 
 ---
 
 ## Key Technical Features
 
-1. **Dual Sentiment Architecture**: Features a high-performance **FinBERT** (`ProsusAI/finbert`) GPU/CPU inference pipeline using PyTorch and Hugging Face `transformers` with a fully automated VADER fallback for lightweight environments.
-2. **Semantic News Routing**: Routes news headlines to relevant sector mappings using **SentenceTransformers** cosine similarity (`all-MiniLM-L6-v2`) with a robust keyword fallback.
-3. **Advanced Quantitative Feature Engineering**: Computes:
-   - **Trend/Momentum**: 14-day RSI, MACD Line/Signal/Histogram, 5-day, 10-day & 21-day momentum.
-   - **Volatility/Risk**: Bollinger Bands width, ATR (Average True Range), realized volatility (rolling 20-day annualized std dev), rolling Sortino ratio, rolling skewness/kurtosis, and max drawdown.
-   - **Volume/State**: Volume Z-Score, rolling Sharpe ratio, VWAP (Volume Weighted Average Price) proxy.
-   - **Macro Factors**: Integrates USD/INR, Crude Oil, India VIX, 10-Year yields, inflation CPI, and repo rates.
-4. **No-Lookahead ML Pipeline**: Shifting all engineered features by 1 day (`lag1`) to completely eliminate lookahead bias in training and evaluation.
-5. **Calibrated Ensemble Model**: Integrates a Voting Ensemble classifier and regressor with Platt Scaling probability calibration (`CalibratedClassifierCV`) to ensure model confidence reflects true empirical frequencies.
-6. **Advanced Backtesting & Sizing**: Simulates trading strategies net of **15 bps (0.15%)** transaction friction and bid-ask slippage. Includes **Kelly Criterion** and **Volatility Targeting** sizing models, calculating CAGR, Sharpe, Sortino, Calmar, VaR (95%), and CVaR (95%).
-7. **Multi-Agent Explanations**: Features a collaborative AI analyst team prompt structure (Macro Analyst, Sector Analyst, Risk Management, Coordinator) to explain forecasts.
-8. **Decoupled API Architecture**: Versioned FastAPI REST API backend with strict Pydantic v2 validation models and NaN serialization cleaning, serving a visual Streamlit dashboard with Plotly correlation heatmaps, macro timelines, and equity curves.
+### 1. NLP & Semantic Routing Engine
+* **FinBERT Sentiment Analysis**: Ingests financial news headlines and scores sentiment from `-1.0` (most bearish) to `+1.0` (most bullish) using the **FinBERT** (`ProsusAI/finbert`) GPU/CPU inference pipeline, falling back to VADER for low-compute environments.
+* **Semantic News Mapper**: Routes headlines to target sectoral categories (`BSE_BANKEX`, `BSE_IT`, `BSE_ENERGY`) using **SentenceTransformers** (`all-MiniLM-L6-v2`) cosine-similarity clustering. Headlines failing similarity thresholds default to `BSE_SENSEX` (general macro).
+
+### 2. Multi-Dimensional Feature Engineering Engine
+All engineered signals are **shifted by 1 day (`lag1`)** before model target alignment to eliminate any lookahead bias in forecasting.
+* **Trend & Momentum**: 14-day RSI, MACD Line/Signal/Histogram, 5-day, 10-day & 21-day price momentum.
+* **Volatility & Risk**: Bollinger Bands width, ATR (Average True Range), realized volatility (rolling 20-day annualized standard deviation of returns), rolling Sortino ratio, rolling 20-day skewness and kurtosis.
+* **Volume & State**: Volume Z-Score, rolling 20-day Sharpe ratio, VWAP (Volume Weighted Average Price) proxy.
+* **Macro Factors**: Daily integrated metrics: USD/INR exchange rate, Crude Oil spot prices, India VIX Index, 10-Year Government Bond Yields, synthetic Inflation CPI baseline, and synthetic Repo Rate baseline.
+
+### 3. Calibrated Ensemble Forecasting
+* **Voting Ensemble**: Fits a soft voting classifier and voting regressor combining `RandomForest`, `ExtraTrees` (for variance reduction), and dynamic hooks for `XGBoost`/`LightGBM` (integrated automatically if available).
+* **Platt Scaling Calibration**: Fits `CalibratedClassifierCV` (sigmoid mapping) to ensure output directional probabilities represent calibrated, empirical frequencies.
+
+### 4. Friction-Aware Backtesting Engine
+* **Advanced Allocation Strategies**:
+  * **AI Kelly Sizing**: Dynamically scales transaction position sizes based on model probabilities using the Kelly Criterion ($2 \times P(\text{UP}) - 1$).
+  * **Volatility Targeting**: Adjusts portfolio exposure to target a constant 15% annualized volatility.
+  * **Baselines**: Buy & Hold, 5-Day Momentum, SMA Crossover, and Previous-Day return direction.
+* **Friction Modeling**: Simulates net-of-cost returns by factoring in **15 bps (0.15%)** of transaction fees and bid-ask slippage per trade.
+* **Portfolio Metrics**: Calculates CAGR, Sharpe, Sortino, Calmar, Max Drawdown, Win Rate, Value at Risk (VaR 95%), and Conditional VaR (CVaR 95%).
+
+### 5. Decoupled Architecture
+* **FastAPI Backend REST API**: Features asynchronous handlers, strict Pydantic V2 validations, and **NaN serialization cleaning** to safely convert pandas `NaN` values to JSON-compliant `null` formats.
+* **Streamlit Terminal**: Dark-themed portfolio dashboard displaying Plotly correlation heatmaps, systematic macro timelines, custom feature weights, and interactive backtesting equity curves.
 
 ---
 
-## Folder Structure
+## Project Folder Structure
 
 ```text
 ├── data/                   # SQLite database directory (gitignored)
@@ -52,6 +101,7 @@ A technically rigorous, portfolio-grade Indian market intelligence and quantitat
 ### 1. Local Setup
 1. Clone the repository and navigate to the project directory:
    ```bash
+   git clone https://github.com/Adithshajee/bse-macro-sector-analyzer.git
    cd bse-macro-sector-analyzer
    ```
 2. Create and activate a virtual environment:
@@ -76,7 +126,7 @@ A technically rigorous, portfolio-grade Indian market intelligence and quantitat
 ## Running the Platform
 
 ### Option A: Standalone Local Mode (Automatic Fallback)
-You can launch the dashboard directly. It will detect that the backend API is offline and compute all ML and backtesting metrics locally:
+You can launch the dashboard directly. It will detect that the backend API is offline and compute all ML and backtesting metrics locally on-the-fly:
 ```bash
 streamlit run src/dashboard/app.py
 ```
@@ -116,8 +166,15 @@ python src/ingestion/news_fetcher.py
 
 ---
 
-## Disclaimer
-*This platform is designed for research, education, and portfolio demonstration purposes. It does not provide financial advice, recommendations, or endorsements for active trading.*
+## Model Risks & Uncertainty Disclosures
+
+> [!WARNING]
+> **Probabilistic Model Predictions**:
+> Machine learning forecasts (such as next-day directional predictions) are probabilistic estimates based on historical signals. They do not guarantee future returns, cannot anticipate black-swan events or structural market regime shifts, and are subject to statistical estimation error.
+
+> [!IMPORTANT]
+> **Regulatory Disclosure**:
+> This dashboard is a quantitative financial modeling showcase built strictly for educational, research, and portfolio demonstration purposes. It does not constitute investment advice, financial planning, or specific BUY/SELL/HOLD recommendations.
 
 ---
 
