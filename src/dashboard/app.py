@@ -21,14 +21,17 @@ def auto_start_backend():
         pass
 
     try:
+        # Resolve absolute project root directory to ensure correct imports
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         # Launch Uvicorn asynchronously in the background using the current virtualenv Python interpreter
         subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "src.api.main:app", "--host", "127.0.0.1", "--port", "8000"],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            cwd=project_root
         )
-        # Allow the API port to bind
-        time.sleep(1.5)
+        # Allow the API port to bind and connect to database
+        time.sleep(2.0)
     except Exception:
         pass
 
