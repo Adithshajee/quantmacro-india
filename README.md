@@ -84,8 +84,6 @@ All engineered signals are **shifted by 1 day (`lag1`)** before model target ali
 │   ├── insights/           # Multi-agent AI explanation engine (llm.py)
 │   ├── models/             # ML predictor with quantitative features (predictor.py)
 │   └── utils/              # Configuration, logging, and sentiment utilities
-├── Dockerfile              # Build configuration for containerization
-├── docker-compose.yml      # Service definitions for backend + frontend
 ├── requirements.txt        # Python package dependencies
 └── .env.example            # Environment configurations blueprint
 ```
@@ -144,13 +142,6 @@ streamlit run src/dashboard/app.py
    streamlit run src/dashboard/app.py
    ```
 
-### Option C: Containerized Mode (Docker Compose)
-To run the entire platform (FastAPI + Streamlit) inside isolated Docker containers:
-```bash
-docker-compose up --build
-```
-- Streamlit dashboard: [http://localhost:8501](http://localhost:8501)
-- FastAPI backend: [http://localhost:8000](http://localhost:8000)
 
 ---
 
