@@ -1,0 +1,27 @@
+# Dockerfile.spaces — optimized for Hugging Face Spaces
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system deps
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY ui/ ./ui/ 2>/dev/null || true
+
+# Create data dirs
+RUN mkdir -p data/reports data/faiss_index models/embedding_cache
+
+# Hugging Face Spaces runs on port 7860
+ENV PORT=7860
+
+# Run Streamlit on HF's required port
+CMD ["streamlit", "run", "src/dashboard/app.py", \
+     "--server.port", "7860", \
+     "--server.address", "0.0.0.0", \
+     "--server.headless", "true"]

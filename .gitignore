@@ -1,0 +1,26 @@
+# Environment
+.env
+*.env
+
+# Data & models (too large for GitHub)
+data/faiss_index/
+data/reports/
+models/embedding_cache/
+models/models--*
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.logmodels/ 
