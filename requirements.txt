@@ -12,3 +12,11 @@ plotly>=5.15.0
 torch>=2.0.0
 transformers>=4.30.0
 sentence-transformers>=2.2.2
+langchain==0.3.25
+langchain-community==0.3.24
+langchain-google-genai==2.1.4
+langgraph==0.4.8
+faiss-cpu==1.11.0
+sentence-transformers==3.4.1
+pypdf==5.5.0
+ragas==0.2.14

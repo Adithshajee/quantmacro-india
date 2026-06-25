@@ -40,17 +40,9 @@ SECTOR_TICKERS = {
 def fetch_and_process(sector, ticker, retries=3):
     logger.info(f"Fetching data for {sector} ({ticker})...")
     
-    import requests
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-    })
-    
     for attempt in range(retries):
         try:
-            df = yf.download(ticker, session=session, period="2y", progress=False)
+            df = yf.download(ticker, period="2y", progress=False)
 
             if df.empty:
                 logger.warning(f"No data returned for {sector} on attempt {attempt+1}.")

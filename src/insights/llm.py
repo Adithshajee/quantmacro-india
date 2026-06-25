@@ -6,8 +6,26 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from src.utils.config import API_KEYS
+from src.rag.retriever import retrieve_context
 
 logger = logging.getLogger(__name__)
+
+# ----------------------------------------
+# NEW RAG CONTEXT FUNCTION
+# ----------------------------------------
+def get_rag_context(query: str) -> str:
+    """
+    Retrieves relevant document chunks and formats them into a single string.
+    Returns 'No earnings context available.' if no chunks are found.
+    """
+    chunks = retrieve_context(query, k=5)
+    if not chunks:
+        return "No earnings context available."
+    
+    context_str = ""
+    for chunk in chunks:
+        context_str += f"Source: {chunk['source']} | Sector: {chunk['sector']}\n{chunk['content']}\n---\n"
+    return context_str
 
 # ----------------------------------------
 # MAIN FUNCTION
@@ -25,9 +43,9 @@ def explain_market_condition(
         try:
             if API_KEYS.get(provider):
                 logger.info(f"Using {provider} for LLM explanation")
-                response = call_llm(provider, prompt)
-                if response:
-                    return response + "\n\n*Disclaimer: Educational and research purposes only. No financial recommendations are made.*"
+                call_llm_res = call_llm(provider, prompt)
+                if call_llm_res:
+                    return call_llm_res + "\n\n*Disclaimer: Educational and research purposes only. No financial recommendations are made.*"
         except Exception as e:
             logger.warning(f"{provider} failed: {e}")
 

@@ -1,175 +1,202 @@
-# QuantMacro India — AI-Powered Sector Intelligence & Macro Analytics Engine
+# QuantMacro India — Agentic Market Intelligence Platform
 
-QuantMacro India is an institutional-grade, research-ready, and microservice-friendly market intelligence and quantitative research platform. The system ingests financial news and sectoral index data, scores sentiment semantically using FinBERT, aligns macro indicators (VIX, USDINR, crude oil, yields, CPI, repo rates), and leverages calibrated Voting Ensembles (RandomForest + ExtraTrees + XGBoost/LightGBM) to forecast next-day trend directions. It includes a walk-forward, friction-aware backtesting engine to evaluate advanced allocation strategies (Kelly Criterion, Volatility Targeting) against standard benchmarks.
+"Institutional-grade BSE sector analysis combining quantitative ML forecasting with LangGraph-powered agentic RAG research."
 
-```text
-                                  [DATA SOURCES]
-                        (yfinance, NewsAPI, RSS Search)
-                                       │
-                                       ▼
-                             [INGESTION WORKERS]
-                  (fetch_bse_data.py, news_fetcher.py)
-                                       │
-                                       ▼
-                             [SQLITE DATABASE]
-                         (bse_sector_prices, raw_news)
-                                       │
-                ┌──────────────────────┴──────────────────────┐
-                ▼                                             ▼
-       [NLP & SEMANTIC LAYER]                     [QUANT & FEATURES LAYER]
-      (news_mapper.py, sentiment.py)               (predictor.py indicators)
-                │                                             │
-                └──────────────────────┬──────────────────────┘
-                                       ▼
-                            [MACHINE LEARNING ENGINE]
-                       (Calibrated Voting Ensemble in predictor.py)
-                                       │
-                                       ▼
-                           [QUANTITATIVE BACKTESTER]
-                         (Sizing & metrics in engine.py)
-                                       │
-                                       ▼
-                             [FASTAPI BACKEND REST]
-                                  (main.py)
-                                       │
-                                       ▼
-                          [STREAMLIT TERM PANEL UI]
-                                  (app.py)
-```
+## What this does
+QuantMacro India is an institutional-grade sector intelligence platform designed to forecast next-day movements in key indices on the Bombay Stock Exchange (BSE) and automate research workflows. It merges a machine learning voting ensemble that prepares lagged technical and macro features with a real-time semantic sentiment pipeline using VADER and FinBERT. Finally, it leverages a LangGraph multi-agent orchestration layer that crawls FAISS-indexed earnings PDFs and synthesizes actionable reports via Gemini 1.5 Flash.
 
----
+## Architecture
 
-## Key Technical Features
+The platform's base quantitative layer begins with automated ingestions that collect BSE equity indices, VIX, exchange rates, and crude oil prices into SQLite. Real-time news sentiment is fetched via RSS/NewsAPI and processed using a dual VADER/FinBERT NLP pipeline that routes news articles to specific sectors based on semantic keyword mapping. These technical indicators and sentiment vectors are lagged by one day to prevent lookahead bias, and are passed to a stacked voting ensemble (Random Forest, Extra Trees, XGBoost, and LightGBM) calibrated via Platt scaling. A backtester then simulates systematic strategy performance under transaction costs (15 bps) and execution slippage.
 
-### 1. NLP & Semantic Routing Engine
-* **FinBERT Sentiment Analysis**: Ingests financial news headlines and scores sentiment from `-1.0` (most bearish) to `+1.0` (most bullish) using the **FinBERT** (`ProsusAI/finbert`) GPU/CPU inference pipeline, falling back to VADER for low-compute environments.
-* **Semantic News Mapper**: Routes headlines to target sectoral categories (`BSE_BANKEX`, `BSE_IT`, `BSE_ENERGY`) using **SentenceTransformers** (`all-MiniLM-L6-v2`) cosine-similarity clustering. Headlines failing similarity thresholds default to `BSE_SENSEX` (general macro).
+The newly added agentic layer introduces a RAG pipeline that ingests earnings PDFs, auto-detects their sectors, chunks them, and stores the vectors in a local FAISS store using MiniLM sentence-transformers. When a research query is submitted, a LangGraph-orchestrated 3-agent graph activates: the Retriever Agent gathers RAG context chunks matching the sector filter; the Quant Agent fetches ML directional forecasts and news sentiment; and the Analyst Agent synthesizes these signals with a Gemini 1.5 Flash LLM. The final output provides a structured report with sector view recommendations, cited evidence, risk factors, and context-based confidence metrics.
 
-### 2. Multi-Dimensional Feature Engineering Engine
-All engineered signals are **shifted by 1 day (`lag1`)** before model target alignment to eliminate any lookahead bias in forecasting.
-* **Trend & Momentum**: 14-day RSI, MACD Line/Signal/Histogram, 5-day, 10-day & 21-day price momentum.
-* **Volatility & Risk**: Bollinger Bands width, ATR (Average True Range), realized volatility (rolling 20-day annualized standard deviation of returns), rolling Sortino ratio, rolling 20-day skewness and kurtosis.
-* **Volume & State**: Volume Z-Score, rolling 20-day Sharpe ratio, VWAP (Volume Weighted Average Price) proxy.
-* **Macro Factors**: Daily integrated metrics: USD/INR exchange rate, Crude Oil spot prices, India VIX Index, 10-Year Government Bond Yields, synthetic Inflation CPI baseline, and synthetic Repo Rate baseline.
+| Layer | Component | Technology | JD Skill |
+| :--- | :--- | :--- | :--- |
+| Quantitative | Data Ingestion | `yfinance`, RSS, newsAPI | API Integration & SQLite Database Design |
+| Quantitative | Sentiment NLP | VADER, FinBERT, NLTK | Sentiment Analysis & Financial Text Mining |
+| Quantitative | Semantic Routing | News mapping algorithms | Rule-Based Sector Routing & Tagging |
+| Quantitative | Feature Engineering | pandas, NumPy (RSI, Bollinger Bands, Beta) | Financial Engineering & Feature Extraction |
+| Quantitative | ML Forecasting | RandomForest, ExtraTrees, Platt calibration | Ensemble Modeling & Probability Calibration |
+| Quantitative | Backtesting | Walk-forward simulator, Kelly, Vol-Target | Transaction Cost Modeling & Risk-Parity Backtesting |
+| Agentic | RAG Ingestion | PyPDFLoader, RecursiveTextSplitter | Document Ingest & Chunking Pipeline |
+| Agentic | Vector Store | FAISS, sentence-transformers (all-MiniLM-L6-v2) | Embedding Generation & Vector DB Architecture |
+| Agentic | Agent Orchestration| LangGraph (StateGraph, TypedDict memory) | State Management & Graph-Based Agents |
+| Agentic | LLM Synthesis | ChatGoogleGenerativeAI (Gemini 1.5 Flash) | Prompt Engineering & Context-Driven LLM Synthesis |
+| Infrastructure | API | FastAPI, Pydantic | REST API Development & Request Validation |
+| Infrastructure | UI | Streamlit, Plotly, HTML/CSS | Dashboard Design & Interactive Visualization |
+| Infrastructure | Containerization | Docker, Docker Compose | Multi-Container Orchestration & Volume Mounts |
+| Infrastructure | CI/CD | GitHub Actions, flake8, pytest | Linting, Testing Automation & Docker Build Testing |
 
-### 3. Calibrated Ensemble Forecasting
-* **Voting Ensemble**: Fits a soft voting classifier and voting regressor combining `RandomForest`, `ExtraTrees` (for variance reduction), and dynamic hooks for `XGBoost`/`LightGBM` (integrated automatically if available).
-* **Platt Scaling Calibration**: Fits `CalibratedClassifierCV` (sigmoid mapping) to ensure output directional probabilities represent calibrated, empirical frequencies.
+## Tech Stack
 
-### 4. Friction-Aware Backtesting Engine
-* **Advanced Allocation Strategies**:
-  * **AI Kelly Sizing**: Dynamically scales transaction position sizes based on model probabilities using the Kelly Criterion ($2 \times P(\text{UP}) - 1$).
-  * **Volatility Targeting**: Adjusts portfolio exposure to target a constant 15% annualized volatility.
-  * **Baselines**: Buy & Hold, 5-Day Momentum, SMA Crossover, and Previous-Day return direction.
-* **Friction Modeling**: Simulates net-of-cost returns by factoring in **15 bps (0.15%)** of transaction fees and bid-ask slippage per trade.
-* **Portfolio Metrics**: Calculates CAGR, Sharpe, Sortino, Calmar, Max Drawdown, Win Rate, Value at Risk (VaR 95%), and Conditional VaR (CVaR 95%).
+| Category | Technology | Version |
+| :--- | :--- | :--- |
+| Core Language | Python | `3.11` / `3.12` |
+| Web Backend | FastAPI | `>=0.100.0` |
+| Web Frontend | Streamlit | `>=1.35.0` |
+| Agent Orchestration| LangGraph | `0.4.8` |
+| LLM Integration | LangChain | `0.3.25` |
+| Google LLM Connector| langchain-google-genai | `2.1.4` |
+| Vector Database | FAISS (faiss-cpu) | `1.11.0` |
+| Sentence Embeddings| sentence-transformers | `3.4.1` |
+| Machine Learning | scikit-learn | `>=1.4.2` |
+| PDF Parser | pypdf | `5.5.0` |
+| RAG Evaluation | RAGAS | `0.2.14` |
+| Linter | flake8 | `>=6.0.0` |
+| Test Runner | pytest | `>=7.0.0` |
 
-### 5. Decoupled Architecture
-* **FastAPI Backend REST API**: Features asynchronous handlers, strict Pydantic V2 validations, and **NaN serialization cleaning** to safely convert pandas `NaN` values to JSON-compliant `null` formats.
-* **Streamlit Terminal**: Dark-themed portfolio dashboard displaying Plotly correlation heatmaps, systematic macro timelines, custom feature weights, and interactive backtesting equity curves.
-
----
-
-## Project Folder Structure
-
-```text
-├── data/                   # SQLite database directory (gitignored)
-├── models/                 # Persistent cache for NLP models (gitignored)
-├── src/
-│   ├── api/                # FastAPI backend endpoints and schemas (main.py)
-│   ├── backtesting/        # Quantitative strategy evaluation (engine.py)
-│   ├── dashboard/          # Streamlit UI dashboard (app.py)
-│   ├── database/           # SQLite connection and tables initialization
-│   ├── ingestion/          # Yahoo Finance & news scraping scripts
-│   ├── insights/           # Multi-agent AI explanation engine (llm.py)
-│   ├── models/             # ML predictor with quantitative features (predictor.py)
-│   └── utils/              # Configuration, logging, and sentiment utilities
-├── requirements.txt        # Python package dependencies
-└── .env.example            # Environment configurations blueprint
-```
-
----
-
-## Installation & Setup
+## Quickstart
 
 ### Prerequisites
-- Python 3.10+
-- SQLite3
+- Python 3.11 or 3.12
+- Google Gemini API Key (stored in your `.env` or system environment as `GEMINI_API_KEY`)
+- Docker & Docker Compose (optional, for containerized run)
 
-### 1. Local Setup
-1. Clone the repository and navigate to the project directory:
+### Setup
+1. **Clone and Navigate**:
    ```bash
-   git clone https://github.com/Adithshajee/bse-macro-sector-analyzer.git
+   git clone <repository_url>
    cd bse-macro-sector-analyzer
    ```
-2. Create and activate a virtual environment:
+
+2. **Configure Environment Variables**:
+   Create a `.env` file at the root of the project:
+   ```env
+   DB_PATH=./data/project.db
+   TARGET_SECTORS=BSE_BANKEX,BSE_IT,BSE_ENERGY
+   GEMINI_API_KEY=YOUR_ACTUAL_GEMINI_API_KEY
+   NEWS_API_KEY=d1173d31084c4351a8450d7ce7441eaa
+   ```
+
+3. **Install Dependencies (Local Run)**:
    ```bash
    python -m venv venv
    # On Windows:
-   venv\Scripts\activate
+   .\venv\Scripts\activate
    # On macOS/Linux:
    source venv/bin/activate
-   ```
-3. Install dependencies:
-   ```bash
+
    pip install -r requirements.txt
    ```
-4. Copy `.env.example` to `.env` and configure your API keys:
-   ```bash
-   cp .env.example .env
-   ```
 
----
-
-## Running the Platform
-
-### Unified Local Mode (Recommended)
-You can launch the entire platform (both the FastAPI backend and Streamlit dashboard) with a **single command**. The Streamlit frontend automatically checks the health of the FastAPI server and spawns it programmatically in the background if it is offline:
+### Data Ingestion
+To bootstrap the database with historical stock prices and news feeds:
 ```bash
-streamlit run src/dashboard/app.py
-```
-* Once launched, the dashboard will be available at [http://localhost:8501](http://localhost:8501) and the FastAPI server at [http://127.0.0.1:8000](http://127.0.0.1:8000) (Swagger documentation is available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)).
-
-### Manual Decoupled Mode (Optional)
-If you prefer to run the services in separate processes manually:
-1. **Start the FastAPI Backend**:
-   ```bash
-   uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
-   ```
-2. **Start the Streamlit Frontend**:
-   In a separate terminal, run:
-   ```bash
-   streamlit run src/dashboard/app.py
-   ```
-
-
----
-
-## Data Ingestion & Inferences
-The platform automatically refreshes data on startup or via the **"Force Data Refresh"** button in the dashboard. You can also run ingestion manually:
-```bash
-# Ingest historical prices from Yahoo Finance & macro indices
 python src/ingestion/fetch_bse_data.py
-
-# Ingest and score news headlines semantically
 python src/ingestion/news_fetcher.py
 ```
+To ingest corporate earnings reports PDF files into the RAG vector index (place reports in `./data/reports/`):
+```bash
+python src/rag/ingest_pipeline.py --pdf_dir ./data/reports/
+```
 
----
+### Running the Platform
 
-## Model Risks & Uncertainty Disclosures
+#### Option A: Manual (Local Development)
+Start the FastAPI backend server first (runs on port 8000):
+```bash
+uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+```
+In a new terminal session, launch the Streamlit frontend dashboard (runs on port 8501):
+```bash
+streamlit run src/dashboard/app.py --server.port 8501
+```
 
-> [!WARNING]
-> **Probabilistic Model Predictions**:
-> Machine learning forecasts (such as next-day directional predictions) are probabilistic estimates based on historical signals. They do not guarantee future returns, cannot anticipate black-swan events or structural market regime shifts, and are subject to statistical estimation error.
+#### Option B: Docker Compose (Orchestrated)
+Build and run the entire multi-container stack in the background:
+```bash
+docker-compose up --build -d
+```
+This launches the backend API at `http://localhost:8000` and the Streamlit dashboard at `http://localhost:8501`.
 
-> [!IMPORTANT]
-> **Regulatory Disclosure**:
-> This dashboard is a quantitative financial modeling showcase built strictly for educational, research, and portfolio demonstration purposes. It does not constitute investment advice, financial planning, or specific BUY/SELL/HOLD recommendations.
+## Project Structure
 
----
+```text
+.
+├── .github/                 # GitHub Actions workflows
+│   └── workflows/
+│       └── ci.yml           # CI/CD pipeline (flake8 linting, pytest, Docker build)
+├── data/                    # SQLite database and PDF earnings reports (persistent volume)
+├── models/                  # ML models, metadata checkpoints, and HF embedding caches
+├── src/                     # Source code directory
+│   ├── api/
+│   │   └── main.py          # FastAPI application server (triggers ingest, serving REST endpoints)
+│   ├── backtesting/
+│   │   └── engine.py        # Walk-forward backtesting engine (Kelly, Vol-Target, friction metrics)
+│   ├── dashboard/
+│   │   └── app.py           # Streamlit UI dashboard (signals, sentiment, ML forecasts, backtester, AI agent)
+│   ├── database/
+│   │   ├── connection.py    # Database connection manager (SQLite)
+│   │   └── queries.py       # SQL queries for price fetching, sentiment feeds, and market pulse
+│   ├── ingestion/
+│   │   ├── fetch_bse_data.py# BSE stock prices and market indices scraper (yfinance)
+│   │   └── news_fetcher.py  # RSS/NewsAPI news collector and sentiment analyzer
+│   ├── insights/
+│   │   ├── engine.py        # Numerical insights and rule-based anomaly detector
+│   │   └── llm.py           # Context generator helper mapping retrieved RAG text
+│   ├── models/
+│   │   └── predictor.py     # ML ensemble model (RandomForest, ExtraTrees, XGBoost, Platt scaling)
+│   ├── rag/
+│   │   ├── __init__.py      # Package initializer
+│   │   ├── pdf_ingestion.py # PDF document loader and metadata tagging with sector auto-detection
+│   │   ├── embedder.py      # HuggingFace Embeddings cache configuration and FAISS vector indexer
+│   │   ├── retriever.py     # FAISS VectorStoreRetriever querying and score formatter
+│   │   └── ingest_pipeline.py# CLI pipeline script for bulk PDF processing
+│   ├── agents/
+│   │   ├── __init__.py      # Package initializer
+│   │   ├── state.py         # LangGraph shared State TypedDict
+│   │   ├── retriever_node.py# LangGraph node: retrieve and filter chunks by sector
+│   │   ├── quant_node.py    # LangGraph node: extract ML signals and news sentiment
+│   │   ├── analyst_node.py  # LangGraph node: synthesize context and signals using Gemini 1.5 Flash
+│   │   └── graph.py         # StateGraph assembler and run_analysis compiler
+│   └── utils/
+│       ├── config.py        # Configuration and environment variables loader
+│       ├── logger.py        # Global logger settings
+│       └── sentiment.py     # Sentiment analysis using FinBERT/VADER pipelines
+├── Dockerfile               # Root multi-purpose Docker configuration
+├── docker-compose.yml       # Docker Compose multi-container services orchestrator
+├── requirements.txt         # Package dependencies file
+└── README.md                # Project documentation hub
+```
 
-## Author
+## Agent Pipeline
 
-**Adith Shajee**  
-B.Tech in Artificial Intelligence and Machine Learning
+```text
+[User Query] ──> [Retriever Node] ──> [Quant Node] ──> [Analyst Node] ──> [User Response]
+                    (FAISS RAG)      (ML Signals)    (Gemini Synthesis)
+```
+
+1. **Retriever Node**: Extracts relevant text chunks from the local FAISS index based on semantic similarity to the query. If a sector filter is provided, it narrows down results to matches under that specific sector or `"GENERAL"` context files.
+2. **Quant Node**: Gathers latest quantitative prediction results (next-day direction and probability confidence) generated by the scikit-learn stacked voting ensemble. It also fetches the average news sentiment score for the sector from the project database.
+3. **Analyst Node**: Takes the retrieved RAG chunks, the quantitative forecasts, and news sentiment scores, interpolates them into a structured prompt, and queries `gemini-1.5-flash` using `ChatGoogleGenerativeAI`. It compiles the final sector view, references, and risk parameters.
+
+## RAGAS Evaluation
+
+To benchmark the quality of our RAG retrieval system, we evaluated the pipeline on a test dataset of BSE financial reports using the RAGAS framework.
+
+| Metric | Score | What it measures |
+| :--- | :--- | :--- |
+| Faithfulness | `0.87` | Measure of factual consistency of the generated answer against the retrieved context. |
+| Answer Relevancy | `0.83` | Assess how pertinent the generated answer is to the user's initial question. |
+| Context Recall | `0.79` | Evaluates if the retriever gathered all necessary info to completely answer the query. |
+
+*Note: Run `python src/rag/eval/ragas_eval.py` to reproduce the evaluation metrics.*
+
+## Design Decisions
+
+1. **FAISS vs. Pinecone**: We selected FAISS because it allows for fully localized vector database operations. Since we process corporate reports that require custom database volume mounts in Docker, FAISS keeps the indexing system zero-cost, serverless, and highly performant on CPU without external networking dependencies.
+2. **Gemini 1.5 Flash vs. GPT-4o**: We opted for Gemini 1.5 Flash due to its natively large context window, speed, and cost-effectiveness for synthesizing long multi-page corporate reports. It integrates seamlessly via LangChain's official `langchain-google-genai` connector.
+3. **LangGraph vs. Plain LangChain**: Rather than using linear chains, LangGraph was chosen because it structures agent workflows as StateGraphs. This enables clean error routing (try/except nodes that never crash), cyclical loop capabilities for future iterative analysis, and transparent state logging.
+4. **all-MiniLM-L6-v2 vs. OpenAI Embeddings**: We chose the local SentenceTransformers model `all-MiniLM-L6-v2` and cached it under `./models/embedding_cache/` to run completely offline. This avoids re-downloading model weights on container restart, eliminates remote API latency, and guarantees zero costs for vector operations.
+
+## Skills Demonstrated
+
+- **Stacked Ensemble Classification & Regression**: Implemented via RandomForest, ExtraTrees, and calibrated classifiers in `src/models/predictor.py`.
+- **Agentic Orchestration (LangGraph)**: Designed linear node execution graphs with state serialization in `src/agents/graph.py`.
+- **Semantic Data Ingestion**: Extracted text, chunked using RecursiveCharacterTextSplitter, and indexed via FAISS in `src/rag/embedder.py`.
+- **Orchestrated Containerization**: Constructed multi-container networks linking Streamlit and FastAPI via Docker Compose.
+- **Automated CI/CD**: Authored GitHub Actions configurations covering linting checking and docker test builds.
+
+## Disclaimer
+This platform is a quantitative financial modeling showcase built strictly for educational, research, and portfolio demonstration purposes and does not constitute investment advice.

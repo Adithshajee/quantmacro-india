@@ -1,37 +1,31 @@
-FROM python:3.10-slim
+# To run FastAPI separately, use:
+# docker exec <container> uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 
-# Install minimal build tools
-RUN apt-get update && apt-get install -y \
+FROM python:3.11-slim
+
+# Install system dependencies (including gcc for compiling FAISS if needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# STEP 1: Force-install CPU-only Torch
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-# STEP 2: Install remaining dependencies
+# Copy and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# STEP 3: Setup appuser WITH a home directory
-# This fixes the "Permission denied: /home/appuser" error
-RUN groupadd -r appuser && useradd -r -g appuser -m -d /home/appuser appuser
+# Create empty directories for persistence
+RUN mkdir -p data models
 
-# Create directories and grant full ownership to appuser
-RUN mkdir -p /app/data /app/models && \
-    chown -R appuser:appuser /app /home/appuser && \
-    chmod -R 775 /app/data /app/models
-
-USER appuser
-# Set HOME env variable so Streamlit knows where to write its metrics
-ENV HOME=/home/appuser
-
-# Copy source code
+# Copy application files
 COPY src/ ./src/
-COPY .env.example .
+# Ensure empty placeholders have .gitkeep or exist
+RUN touch data/.gitkeep models/.gitkeep
 
-EXPOSE 8080
+# Expose ports: 8000 for FastAPI API, 8501 for Streamlit Dashboard
+EXPOSE 8000
+EXPOSE 8501
 
-# The Entrypoint
-CMD streamlit run src/dashboard/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+# Default launch command runs the Streamlit UI dashboard
+CMD ["streamlit", "run", "src/dashboard/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]

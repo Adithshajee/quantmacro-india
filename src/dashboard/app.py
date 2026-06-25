@@ -405,11 +405,12 @@ else:
         )
 
     # --- TABS ---
-    tab_overview, tab_sentiment, tab_ml, tab_backtest = st.tabs([
+    tab_overview, tab_sentiment, tab_ml, tab_backtest, tab_agent = st.tabs([
         "📊 Market Overview & Signals", 
         "📰 Semantic Sentiment Feed", 
         "🔮 ML Forecasting", 
-        "🧪 Strategy Backtester"
+        "🧪 Strategy Backtester",
+        "🕵️ AI Research Agent"
     ])
 
     with tab_overview:
@@ -698,6 +699,132 @@ else:
                     })
             st.write(pd.DataFrame(metrics_table_data))
             st.caption("Friction Model: Strategy returns are simulated net of 0.15% (15 bps) transaction costs and execution slippage per trade.")
+
+    with tab_agent:
+        st.subheader("🕵️ AI Sector Research Agent")
+        st.caption("Powered by LangGraph + Gemini + RAG")
+        
+        # Initialize session state for pre-filling query
+        if "agent_query_input" not in st.session_state:
+            st.session_state.agent_query_input = ""
+        if "agent_sector_filter" not in st.session_state:
+            st.session_state.agent_sector_filter = "All Sectors"
+            
+        # Sample query buttons
+        st.markdown("##### 💡 Suggested Prompts:")
+        col_s1, col_s2, col_s3 = st.columns(3)
+        with col_s1:
+            if st.button("Banking Risks", use_container_width=True, help="Check Banking sector risks"):
+                st.session_state.agent_query_input = "What are the key risks for BSE Banking sector based on recent filings?"
+                st.session_state.agent_sector_filter = "Banking"
+                st.rerun()
+        with col_s2:
+            if st.button("IT vs Macro Headwinds", use_container_width=True, help="Analyze IT sector and macro drivers"):
+                st.session_state.agent_query_input = "Compare IT sector revenue trends vs macro headwinds"
+                st.session_state.agent_sector_filter = "IT"
+                st.rerun()
+        with col_s3:
+            if st.button("Pharma FX Outlook", use_container_width=True, help="Analyze Pharma FX exposures"):
+                st.session_state.agent_query_input = "What is the outlook for Pharma sector given current FX rates?"
+                st.session_state.agent_sector_filter = "Pharma"
+                st.rerun()
+                
+        # Layout columns
+        col_q_left, col_q_right = st.columns([3, 1])
+        with col_q_left:
+            query = st.text_area(
+                "Ask a research question:",
+                value=st.session_state.agent_query_input,
+                placeholder="e.g. What is the earnings outlook for BSE IT sector?",
+                height=100
+            )
+        with col_q_right:
+            sectors_list = ["All Sectors", "IT", "Banking", "Pharma", "Auto", "Energy"]
+            try:
+                sec_index = sectors_list.index(st.session_state.agent_sector_filter)
+            except ValueError:
+                sec_index = 0
+            sector_filter = st.selectbox(
+                "Sector Filter",
+                sectors_list,
+                index=sec_index
+            )
+            # Update session state if user manually changes it
+            st.session_state.agent_sector_filter = sector_filter
+            
+        if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
+            if not query.strip():
+                st.warning("Please enter a query first!")
+            else:
+                with st.spinner("Running 3-agent analysis (Retriever → Quant → Analyst)..."):
+                    try:
+                        # Prepare payload
+                        payload = {
+                            "question": query,
+                            "sector": sector_filter if sector_filter != "All Sectors" else ""
+                        }
+                        # POST request to FastAPI backend
+                        res = requests.post(f"{API_URL}/agent/query", json=payload, timeout=60)
+                        
+                        if res.status_code == 200:
+                            data = res.json()
+                            answer = data.get("answer", "")
+                            sources = data.get("sources", [])
+                            confidence = data.get("confidence", "LOW")
+                            ml_direction = data.get("ml_direction", "N/A")
+                            ml_probability = data.get("ml_probability", 0.5)
+                            news_sentiment = data.get("news_sentiment", 0.0)
+                            error = data.get("error", "")
+                            
+                            if error:
+                                st.error(f"Agent reported an error: {error}")
+                                
+                            # Expander 1: Sector View & Analysis
+                            with st.expander("Sector View & Analysis", expanded=True):
+                                st.markdown(answer)
+                                
+                            # Expander 2: Quantitative Signals
+                            with st.expander("Quantitative Signals", expanded=True):
+                                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                                with col_m1:
+                                    st.metric(label="ML Model Direction", value=ml_direction)
+                                with col_m2:
+                                    st.metric(label="Model Probability", value=f"{ml_probability*100:.1f}%")
+                                with col_m3:
+                                    # news_sentiment as colored metric (green if > 0.1, red if < -0.1, gray otherwise)
+                                    delta_val = "Bullish" if news_sentiment > 0.1 else "Bearish" if news_sentiment < -0.1 else "Neutral"
+                                    delta_color = "normal" if abs(news_sentiment) > 0.1 else "off"
+                                    st.metric(label="News Sentiment Score", value=f"{news_sentiment:.3f}", delta=delta_val, delta_color=delta_color)
+                                with col_m4:
+                                    # confidence badge
+                                    badge_color = "#10b981" if confidence == "HIGH" else "#fbbf24" if confidence == "MEDIUM" else "#f43f5e"
+                                    st.markdown(
+                                        f"<div style='text-align: center; background-color: #171c26; border: 1px solid #1e293b; border-radius: 12px; padding: 1.25rem;'>"
+                                        f"<div style='color: #94a3b8; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;'>Confidence</div>"
+                                        f"<div style='margin-top: 0.5rem; display: inline-block; background-color: {badge_color}; color: #000; padding: 4px 12px; border-radius: 4px; font-weight: 700; font-size: 1.1rem;'>{confidence}</div>"
+                                        f"</div>",
+                                        unsafe_allow_html=True
+                                    )
+                                    
+                            # Expander 3: Sources Used (RAG)
+                            with st.expander("Sources Used (RAG)", expanded=True):
+                                if not sources:
+                                    st.info("No sources cited for this response.")
+                                else:
+                                    from collections import Counter
+                                    source_counts = Counter(sources)
+                                    st.markdown("##### Referenced Reports:")
+                                    for src, count in source_counts.items():
+                                        st.markdown(f"- 📁 `{src}` ({count} chunk(s) retrieved)")
+                                        
+                        else:
+                            st.error(f"API Error (HTTP {res.status_code}): {res.text}")
+                    except requests.exceptions.ConnectionError:
+                        st.error("API Error: Backend server is unreachable. Please verify that the FastAPI server is running at http://127.0.0.1:8000")
+                    except Exception as e:
+                        st.error(f"An unexpected error occurred: {e}")
+                        
+        st.markdown("<p style='color: #64748b; font-size: 0.8rem; text-align: center; margin-top: 1rem;'>Disclaimer: For research purposes only. Not investment advice.</p>", unsafe_allow_html=True)
 
     # --- AI Explanation / Insights Layer ---
     st.markdown("<hr style='border-color: #1e293b;'/>", unsafe_allow_html=True)

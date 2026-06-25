@@ -330,3 +330,31 @@ def trigger_ingestion(background_tasks: BackgroundTasks):
         status="accepted",
         message="Background ingestion pipeline triggered successfully."
     )
+
+from src.agents.graph import run_analysis
+from pydantic import BaseModel
+
+class AgentQueryRequest(BaseModel):
+    question: str
+    sector: str = ""
+
+class AgentQueryResponse(BaseModel):
+    answer: str
+    sources: list
+    confidence: str
+    ml_direction: str
+    ml_probability: float
+    news_sentiment: float
+    error: str = ""
+
+@app.post("/agent/query", response_model=AgentQueryResponse)
+async def agent_query(request: AgentQueryRequest):
+    try:
+        result = run_analysis(query=request.question, sector=request.sector)
+        return AgentQueryResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/agent/health")
+async def agent_health():
+    return {"status": "ok", "agents": ["retriever", "quant", "analyst"], "llm": "gemini-2.5-flash"}
