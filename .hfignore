@@ -1,0 +1,11 @@
+venv/
+.venv/
+models/embedding_cache/
+data/faiss_index/
+__pycache__/
+*.sqlite
+*.db
+*.pyc
+*.log
+.git/
+node_modules/
