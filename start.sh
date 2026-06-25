@@ -1,15 +1,12 @@
 #!/bin/bash
-
-# 1. Start the FastAPI backend application in the background
-echo "Launching FastAPI backend execution network on port 8000..."
+# Start FastAPI backend on port 8000 (internal)
 uvicorn src.api.main:app --host 0.0.0.0 --port 8000 &
 
-# 2. Give the microservice a brief moment to initialize
-sleep 3
+# Give FastAPI 4 seconds to start before Streamlit tries to connect
+sleep 4
 
-# 3. Start the primary Streamlit interface on the mandatory HF port
-echo "Launching Streamlit UI orchestration layer on Hugging Face port 7860..."
+# Start Streamlit on port 7860 (HF Spaces requires this port)
 streamlit run src/dashboard/app.py \
-    --server.port 7860 \
-    --server.address 0.0.0.0 \
-    --server.headless true
+  --server.port 7860 \
+  --server.address 0.0.0.0 \
+  --server.headless true

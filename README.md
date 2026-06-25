@@ -1,3 +1,12 @@
+---
+title: QuantMacro India
+emoji: 📈
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+---
+
 # QuantMacro India — Agentic Market Intelligence Platform
 
 "Institutional-grade BSE sector analysis combining quantitative ML forecasting with LangGraph-powered agentic RAG research."
